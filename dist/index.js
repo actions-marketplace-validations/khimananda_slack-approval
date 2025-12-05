@@ -35,17 +35,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core = __importStar(require("@actions/core"));
 const bolt_1 = require("@slack/bolt");
 const web_api_1 = require("@slack/web-api");
+const crypto_1 = require("crypto");
 const token = process.env.SLACK_BOT_TOKEN || "";
 const signingSecret = process.env.SLACK_SIGNING_SECRET || "";
 const slackAppToken = process.env.SLACK_APP_TOKEN || "";
 const channel_id = process.env.SLACK_CHANNEL_ID || "";
 const environment = process.env.ENVIRONMENT || "";
+const url = process.env.URL || "";
+const runport = process.env.PORT || 3000;
+const acceptValue = `${(0, crypto_1.randomUUID)()}-approve`;
+const rejectValue = `${(0, crypto_1.randomUUID)()}-reject`;
 const app = new bolt_1.App({
     token: token,
     signingSecret: signingSecret,
     appToken: slackAppToken,
     socketMode: true,
-    port: 3000,
     logLevel: bolt_1.LogLevel.DEBUG,
 });
 function run() {
@@ -68,7 +72,7 @@ function run() {
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": `GitHub Actions Approval Request`,
+                                "text": "GitHub <" + actionsUrl + "|ACTION> Approval Request",
                             }
                         },
                         {
@@ -76,27 +80,19 @@ function run() {
                             "fields": [
                                 {
                                     "type": "mrkdwn",
-                                    "text": `*GitHub Actor:*\n${actor}`
+                                    "text": `*GitHub Actor:* ${actor}`
                                 },
                                 {
                                     "type": "mrkdwn",
-                                    "text": `*Repos:*\n${github_server_url}/${github_repos}`
+                                    "text": `*ENV:* ${environment}`
                                 },
                                 {
                                     "type": "mrkdwn",
-                                    "text": `*Actions URL:*\n${actionsUrl}`
+                                    "text": `*Workflow:* ${workflow}`
                                 },
                                 {
                                     "type": "mrkdwn",
-                                    "text": `*ENVIRONMENT:*\n${environment}`
-                                },
-                                {
-                                    "type": "mrkdwn",
-                                    "text": `*Workflow:*\n${workflow}`
-                                },
-                                {
-                                    "type": "mrkdwn",
-                                    "text": `*RunnerOS:*\n${runnerOS}`
+                                    "text": `*URL: *${url}`
                                 }
                             ]
                         },
@@ -111,7 +107,7 @@ function run() {
                                         "text": "Approve"
                                     },
                                     "style": "primary",
-                                    "value": "approve",
+                                    "value": acceptValue,
                                     "action_id": "slack-approval-approve"
                                 },
                                 {
@@ -122,7 +118,7 @@ function run() {
                                         "text": "Reject"
                                     },
                                     "style": "danger",
-                                    "value": "reject",
+                                    "value": rejectValue,
                                     "action_id": "slack-approval-reject"
                                 }
                             ]
@@ -130,56 +126,62 @@ function run() {
                     ]
                 });
             }))();
-            app.action('slack-approval-approve', ({ ack, client, body, logger }) => __awaiter(this, void 0, void 0, function* () {
+            app.action('slack-approval-approve', ({ ack, client, body, logger, payload }) => __awaiter(this, void 0, void 0, function* () {
                 var _a, _b, _c;
-                yield ack();
                 try {
-                    const response_blocks = (_a = body.message) === null || _a === void 0 ? void 0 : _a.blocks;
-                    response_blocks.pop();
-                    response_blocks.push({
-                        'type': 'section',
-                        'text': {
-                            'type': 'mrkdwn',
-                            'text': `Approved by <@${body.user.id}> `,
-                        },
-                    });
-                    yield client.chat.update({
-                        channel: ((_b = body.channel) === null || _b === void 0 ? void 0 : _b.id) || "",
-                        ts: ((_c = body.message) === null || _c === void 0 ? void 0 : _c.ts) || "",
-                        blocks: response_blocks
-                    });
+                    if (payload.value === acceptValue) {
+                        yield ack();
+                        const response_blocks = (_a = body.message) === null || _a === void 0 ? void 0 : _a.blocks;
+                        response_blocks.pop();
+                        response_blocks.push({
+                            'type': 'section',
+                            'text': {
+                                'type': 'mrkdwn',
+                                'text': `Approved by <@${body.user.id}> `,
+                            },
+                        });
+                        yield client.chat.update({
+                            channel: ((_b = body.channel) === null || _b === void 0 ? void 0 : _b.id) || "",
+                            ts: ((_c = body.message) === null || _c === void 0 ? void 0 : _c.ts) || "",
+                            blocks: response_blocks
+                        });
+                        process.exit(0);
+                    }
                 }
                 catch (error) {
                     logger.error(error);
+                    process.exit(1);
                 }
-                process.exit(0);
             }));
-            app.action('slack-approval-reject', ({ ack, client, body, logger }) => __awaiter(this, void 0, void 0, function* () {
+            app.action('slack-approval-reject', ({ ack, client, body, logger, payload }) => __awaiter(this, void 0, void 0, function* () {
                 var _d, _e, _f;
-                yield ack();
                 try {
-                    const response_blocks = (_d = body.message) === null || _d === void 0 ? void 0 : _d.blocks;
-                    response_blocks.pop();
-                    response_blocks.push({
-                        'type': 'section',
-                        'text': {
-                            'type': 'mrkdwn',
-                            'text': `Rejected by <@${body.user.id}>`,
-                        },
-                    });
-                    yield client.chat.update({
-                        channel: ((_e = body.channel) === null || _e === void 0 ? void 0 : _e.id) || "",
-                        ts: ((_f = body.message) === null || _f === void 0 ? void 0 : _f.ts) || "",
-                        blocks: response_blocks
-                    });
+                    if (payload.value === rejectValue) {
+                        yield ack();
+                        const response_blocks = (_d = body.message) === null || _d === void 0 ? void 0 : _d.blocks;
+                        response_blocks.pop();
+                        response_blocks.push({
+                            'type': 'section',
+                            'text': {
+                                'type': 'mrkdwn',
+                                'text': `Rejected by <@${body.user.id}>`,
+                            },
+                        });
+                        yield client.chat.update({
+                            channel: ((_e = body.channel) === null || _e === void 0 ? void 0 : _e.id) || "",
+                            ts: ((_f = body.message) === null || _f === void 0 ? void 0 : _f.ts) || "",
+                            blocks: response_blocks
+                        });
+                        process.exit(1);
+                    }
                 }
                 catch (error) {
                     logger.error(error);
+                    process.exit(1);
                 }
-                process.exit(1);
             }));
             (() => __awaiter(this, void 0, void 0, function* () {
-                yield app.start(3000);
+                const res = yield app.start(runport);
                 console.log('Waiting Approval reaction.....');
             }))();
         }

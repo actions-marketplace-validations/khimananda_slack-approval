@@ -1,19 +1,23 @@
 import * as core from '@actions/core'
 import { App, BlockAction, LogLevel } from '@slack/bolt'
 import { WebClient } from '@slack/web-api'
+import { randomUUID } from 'crypto'
 
 const token = process.env.SLACK_BOT_TOKEN || ""
 const signingSecret =  process.env.SLACK_SIGNING_SECRET || ""
 const slackAppToken = process.env.SLACK_APP_TOKEN || ""
 const channel_id    = process.env.SLACK_CHANNEL_ID || ""
 const environment   = process.env.ENVIRONMENT || ""
+const url           = process.env.URL || ""
+const runport : any  = process.env.PORT || 3000
+const acceptValue : any = `${randomUUID()}-approve`;
+const rejectValue : any = `${randomUUID()}-reject`;
 
 const app = new App({
   token: token,
   signingSecret: signingSecret,
   appToken: slackAppToken,
   socketMode: true,
-  port: 3000,
   logLevel: LogLevel.DEBUG,
 });
 
@@ -38,7 +42,7 @@ async function run(): Promise<void> {
               "type": "section",
               "text": {
                   "type": "mrkdwn",
-                  "text": `GitHub Actions Approval Request`,
+                  "text": "GitHub <" + actionsUrl + "|ACTION> Approval Request",
                 }
             },
             {
@@ -46,27 +50,20 @@ async function run(): Promise<void> {
               "fields": [
                 {
                   "type": "mrkdwn",
-                  "text": `*GitHub Actor:*\n${actor}`
+                  "text": `*GitHub Actor:* ${actor}`
+                },
+                
+                {
+                  "type": "mrkdwn",
+                  "text": `*ENV:* ${environment}`
                 },
                 {
                   "type": "mrkdwn",
-                  "text": `*Repos:*\n${github_server_url}/${github_repos}`
+                  "text": `*Workflow:* ${workflow}`
                 },
                 {
                   "type": "mrkdwn",
-                  "text": `*Actions URL:*\n${actionsUrl}`
-                },
-                {
-                  "type": "mrkdwn",
-                  "text": `*ENVIRONMENT:*\n${environment}`
-                },
-                {
-                  "type": "mrkdwn",
-                  "text": `*Workflow:*\n${workflow}`
-                },
-                {
-                  "type": "mrkdwn",
-                  "text": `*RunnerOS:*\n${runnerOS}`
+                  "text": `*URL: *${url}`
                 }
               ]
             },
@@ -81,7 +78,7 @@ async function run(): Promise<void> {
                             "text": "Approve"
                         },
                         "style": "primary",
-                        "value": "approve",
+                        "value": acceptValue,
                         "action_id": "slack-approval-approve"
                     },
                     {
@@ -92,7 +89,7 @@ async function run(): Promise<void> {
                                 "text": "Reject"
                         },
                         "style": "danger",
-                        "value": "reject",
+                        "value": rejectValue,
                         "action_id": "slack-approval-reject"
                     }
                 ]
@@ -101,58 +98,65 @@ async function run(): Promise<void> {
       });
     })();
 
-    app.action('slack-approval-approve', async ({ack, client, body, logger}) => {
-      await ack();
+    app.action('slack-approval-approve', async ({ack, client, body, logger, payload}) => {
       try {
-        const response_blocks = (<BlockAction>body).message?.blocks
-        response_blocks.pop()
-        response_blocks.push({
-          'type': 'section',
-          'text': {
-            'type': 'mrkdwn',
-            'text': `Approved by <@${body.user.id}> `,
-          },
-        })
-
-        await client.chat.update({
-          channel: body.channel?.id || "",
-          ts: (<BlockAction>body).message?.ts || "",
-          blocks: response_blocks
-        })
+        if((payload as any).value === acceptValue) {
+          await ack();
+          const response_blocks = (<BlockAction>body).message?.blocks
+          response_blocks.pop()
+          response_blocks.push({
+            'type': 'section',
+            'text': {
+              'type': 'mrkdwn',
+              'text': `Approved by <@${body.user.id}> `,
+            },
+          })
+  
+          await client.chat.update({
+            channel: body.channel?.id || "",
+            ts: (<BlockAction>body).message?.ts || "",
+            blocks: response_blocks
+          })
+          
+          process.exit(0);
+        }
       } catch (error) {
         logger.error(error)
+        process.exit(1)
       }
-
-      process.exit(0)
     });
 
-    app.action('slack-approval-reject', async ({ack, client, body, logger}) => {
-      await ack();
+    app.action('slack-approval-reject', async ({ack, client, body, logger, payload}) => {
       try {
-        const response_blocks = (<BlockAction>body).message?.blocks
-        response_blocks.pop()
-        response_blocks.push({
-          'type': 'section',
-          'text': {
-            'type': 'mrkdwn',
-            'text': `Rejected by <@${body.user.id}>`,
-          },
-        })
+        if((payload as any).value === rejectValue) {
+          await ack();
+          const response_blocks = (<BlockAction>body).message?.blocks
+          response_blocks.pop()
+          response_blocks.push({
+            'type': 'section',
+            'text': {
+              'type': 'mrkdwn',
+              'text': `Rejected by <@${body.user.id}>`,
+            },
+          })
 
-        await client.chat.update({
-          channel: body.channel?.id || "",
-          ts: (<BlockAction>body).message?.ts || "",
-          blocks: response_blocks
-        })
+          await client.chat.update({
+            channel: body.channel?.id || "",
+            ts: (<BlockAction>body).message?.ts || "",
+            blocks: response_blocks
+          });
+
+          process.exit(1);
+        }
       } catch (error) {
         logger.error(error)
+        process.exit(1)
       }
 
-      process.exit(1)
     });
 
     (async () => {
-      await app.start(3000);
+      const res = await app.start(runport);
       console.log('Waiting Approval reaction.....');
     })();
   } catch (error) {
